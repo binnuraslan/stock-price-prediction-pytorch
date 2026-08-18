@@ -19,7 +19,7 @@ Proje, Rodolfo Saldanha'nın [Stock price prediction with PyTorch](https://mediu
 2. **Ön işleme**:
    - Sadece `Close` (kapanış) fiyatı kullanıldı.
    - Eksik satırlar veriden çıkarıldı (`dropna`).
-   - Fiyatlar `MinMaxScaler` ile `[-1, 1]` aralığına ölçeklendi.
+   - Fiyatlar `MinMaxScaler` ile `[-1, 1]` aralığına ölçeklendi; **scaler sadece ham serinin eğitim (train) kısmıyla "öğretildi"** (fit edildi), sonra tüm seriye uygulandı — böylece test dönemi, ölçekleme aşamasında hiç görülmedi ve geleceğe dair bilgi sızıntısı önlendi.
 3. **Kayan pencere**: bir sonraki günü tahmin etmek için **20 günlük** bir geçmiş pencere kullanıldı (özel bir `create_sequences` fonksiyonuyla diziler oluşturuldu).
 4. **Train/test bölme**: %80 / %20, **kronolojik sırayla** (karıştırılmadan) bölündü — böylece model yalnızca kendi eğitim döneminden sonraki veriyle test edilmiş oldu, geleceğe dair bir bilgi sızıntısı (data leakage) önlendi.
 5. **Modeller**: iki model de aynı hiperparametreleri paylaşıyor — `input_dim=1`, `hidden_dim=32`, `num_layers=2`, `output_dim=1` — böylece karşılaştırma, model kapasitesinden değil doğrudan mimari farktan (LSTM vs GRU) kaynaklanıyor.
@@ -29,12 +29,13 @@ Proje, Rodolfo Saldanha'nın [Stock price prediction with PyTorch](https://mediu
 
 | Model | Test MSE | Test RMSE | Eğitim süresi |
 |-------|---------:|----------:|---------------:|
-| LSTM  | 165.72   | 12.87     | — |
-| GRU   | 100.26   | 10.01     | ~5.5 sn |
+| LSTM  | 83.69    | 9.15      | — |
+| GRU   | 195.68   | 13.99     | ~5.5 sn |
+| **Persistence baseline** (naif "yarın = bugün") | **17.62** | **4.20** | 0.00 sn |
 
-Bu veri setinde **GRU, LSTM'den daha iyi performans gösterdi** — hem doğrulukta hem eğitim hızında. Bu sonuç, referans makaledeki bulgularla tutarlı. Bunun olası sebebi, GRU'nun daha basit kapı yapısının (ayrı bir hücre durumu ve çıkış kapısı olmadan) daha az parametre içermesi ve bu sayede benzer miktarda eğitimle daha hızlı yakınsaması.
+**Persistence baseline, hem LSTM'i hem GRU'yu açık farkla geçiyor.** Sadece bugünün fiyatını tekrar eden bir "model", bu kadar trend ağırlıklı ve otokorelasyonlu bir hisse için aşılması zor bir çıta — iki RNN de serinin genel şeklini takip etmeyi öğrenmiş, ama sahip oldukları fazladan esneklik, bir sonraki güne naif tahminden daha uzak düşmelerine sebep olmuş. Bu, hisse senedi tahmininde sık karşılaşılan, alçakgönüllü bir sonuç ve tek başına RMSE sayılarından daha dürüst bir çıkarım sunuyor: **hiçbir model, basit referansa göre gerçek bir tahmin değeri gösteremedi.**
 
-Her iki model de hissenin genel trendini makul ölçüde takip edebiliyor, ancak — hisse senedi tahmininde beklendiği gibi — ani ve keskin fiyat hareketlerini önceden öngörmek yerine bir adım geriden takip ediyorlar.
+İki RNN arasında ise bu sefer LSTM, GRU'yu geçti — bu projenin, scaler'ı leakage-safe hale getirmeden (yani `MinMaxScaler`'ı sadece eğitim dönemi yerine tüm seriye fit ederken) yapılan önceki bir koşusunun tam tersi. Bu tersine dönüş de başlı başına değerli bir bulgu: hangi mimarinin "kazandığı", sadece epoch sayısı ya da gizli katman boyutu gibi şeylere değil, bir ön işleme detayına bile duyarlı çıktı. Bu, tek bir karşılaştırmayı fazla ciddiye almamak gerektiğinin bir hatırlatıcısı — aşağıdaki [AI Snake Oil](https://www.aisnakeoil.com/) notuna bakabilirsin.
 
 ## Proje Yapısı
 
@@ -65,9 +66,10 @@ Rastgele bir tohum (seed) sabitlenmediği sürece sonuçlar her çalıştırmada
 
 ## Sınırlılıklar ve Değerlendirme
 
-Sadece geçmiş fiyatlara dayanarak hisse senedi fiyatı tahmin etmek gerçekten zor bir problem — gerçek piyasalar, bu veri setinde hiç yer almayan sayısız faktörden (haberler, makroekonomi, yatırımcı psikolojisi) etkileniyor. Buradaki nispeten düşük RMSE, modelin geleceği öngörebildiğinden çok, yakın geçmişteki trendi takip etmeyi öğrendiğini gösteriyor. Bu proje öğrenme amaçlıdır (zaman serisi ön işleme, RNN'ler ve PyTorch eğitim döngüleri üzerine), bir yatırım/alım-satım aracı olarak tasarlanmamıştır.
+Sadece geçmiş fiyatlara dayanarak hisse senedi fiyatı tahmin etmek gerçekten zor bir problem — gerçek piyasalar, bu veri setinde hiç yer almayan sayısız faktörden (haberler, makroekonomi, yatırımcı psikolojisi) etkileniyor. Buradaki RMSE değerleri, modelin gerçek bir tahmin gücüne sahip olduğunu değil, yakın geçmişteki trendi ne kadar yakından takip ettiğini gösteriyor — yukarıdaki sonuçların da gösterdiği gibi, basit bir "yarın = bugün" referansı, eğitilmiş iki modeli de geçti. Düşük bir hata sayısı tek başına bir modelin işe yarar bir şey öğrendiği anlamına gelmez — bunun anlam kazanması için bir referansla karşılaştırılması gerekir, hatta o zaman bile sonuçlar, modelin "zekasıyla" hiç ilgisi olmayan ön işleme tercihlerine göre tersine dönebiliyor. Bu proje öğrenme amaçlıdır (zaman serisi ön işleme, RNN'ler ve PyTorch eğitim döngüleri üzerine), bir yatırım/alım-satım aracı olarak tasarlanmamıştır — ve bu sonuç, genel olarak manşet doğruluk rakamlarına şüpheyle yaklaşmak için iyi bir hatırlatıcı; bu konuda daha fazlası için Narayanan & Kapoor'un [AI Snake Oil](https://www.aisnakeoil.com/) kitabına bakılabilir.
 
 ## Teşekkür
 
 - Yöntem referansı: [Rodolfo Saldanha — "Stock price prediction with PyTorch"](https://medium.com/swlh/stock-price-prediction-with-pytorch-37f52ae84632)
 - Veri: [Yahoo Finance](https://finance.yahoo.com/), `yfinance` Python paketi aracılığıyla
+- AI tahmin iddialarına eleştirel bir bakış: Narayanan & Kapoor, [AI Snake Oil](https://www.aisnakeoil.com/)

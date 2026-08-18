@@ -1,5 +1,7 @@
 # Stock Price Prediction with PyTorch (LSTM vs GRU)
 
+*Diğer diller: [Türkçe](README.tr.md)*
+
 A beginner machine learning project that predicts Amazon (AMZN) stock closing prices using two recurrent neural network architectures — **LSTM** and **GRU** — implemented in PyTorch, and compares their performance.
 
 This project follows the general approach described in [Stock price prediction with PyTorch](https://medium.com/swlh/stock-price-prediction-with-pytorch-37f52ae84632) by Rodolfo Saldanha.
@@ -17,7 +19,7 @@ This project follows the general approach described in [Stock price prediction w
 2. **Preprocessing**:
    - Only the `Close` price is used.
    - Missing rows are dropped (`dropna`).
-   - Prices are scaled to `[-1, 1]` with `MinMaxScaler`.
+   - Prices are scaled to `[-1, 1]` with `MinMaxScaler`, **fit only on the training portion of the raw series** and then applied to the full series — the test period is never seen during fitting, so no future information leaks into the scaling step.
 3. **Sliding window**: a lookback window of **20 days** is used to predict day 21 (sequences generated with a custom `create_sequences` function).
 4. **Train/test split**: 80% / 20%, split **chronologically** (no shuffling) to avoid look-ahead bias — the model is only ever tested on data that comes after its training period.
 5. **Models**: both models share the same hyperparameters — `input_dim=1`, `hidden_dim=32`, `num_layers=2`, `output_dim=1` — so the comparison isolates the effect of the architecture (LSTM vs GRU) rather than model capacity.
@@ -27,12 +29,13 @@ This project follows the general approach described in [Stock price prediction w
 
 | Model | Test MSE | Test RMSE | Training time |
 |-------|---------:|----------:|---------------:|
-| LSTM  | 165.72   | 12.87     | — |
-| GRU   | 100.26   | 10.01     | ~5.5s |
+| LSTM  | 83.69    | 9.15      | — |
+| GRU   | 195.68   | 13.99     | ~5.5s |
+| **Persistence baseline** (naive "tomorrow = today") | **17.62** | **4.20** | 0.00s |
 
-**GRU outperformed LSTM** on this dataset, both in accuracy and training speed — consistent with the reference article's findings. This is likely because GRU's simpler gating mechanism (no separate cell state, no output gate) has fewer parameters to learn, so it converges faster for a comparable amount of training.
+The **persistence baseline clearly beats both LSTM and GRU** on this dataset. A model that does nothing but repeat today's price is a hard bar to clear for a stock this trend-heavy and autocorrelated — both RNNs learned to track the general shape of the series, but their extra flexibility let them drift further from the very next value than the naive guess does. This is a common, humbling result in stock price prediction, and it's a more honest takeaway than the RMSE numbers alone: **neither model demonstrated real predictive value over the trivial baseline.**
 
-Both models track the overall trend of the stock reasonably well, but — as expected for stock price prediction — they lag behind sharp, sudden moves rather than anticipating them.
+Between the two RNNs, LSTM outperformed GRU here — the opposite of an earlier run of this same project, before the scaling was made leakage-safe (fitting `MinMaxScaler` on the full series instead of the training period only). That reversal is itself a useful finding: which architecture "wins" was sensitive to a preprocessing detail, not just the number of epochs or hidden units. This is a reminder not to over-read a single comparison — see the note on [AI Snake Oil](https://www.aisnakeoil.com/) below.
 
 ## Project structure
 
@@ -62,9 +65,10 @@ Results will vary slightly run to run unless a random seed is fixed (this notebo
 
 ## Limitations & reflection
 
-Stock price prediction from historical prices alone is a genuinely hard problem — real markets are influenced by countless factors (news, macroeconomics, sentiment) that aren't present in this dataset. The relatively low RMSE here mostly reflects that the model has learned to track the recent trend, not that it can anticipate future moves. This project was built for learning purposes (time series preprocessing, RNNs, and PyTorch training loops), not as a trading tool.
+Stock price prediction from historical prices alone is a genuinely hard problem — real markets are influenced by countless factors (news, macroeconomics, sentiment) that aren't present in this dataset. The RMSE values here mostly reflect how closely each model tracks the recent trend, not any real predictive power: as the results above show, a trivial "tomorrow = today" baseline beat both trained models. A low error number on its own doesn't mean a model has learned something useful — it needs to be measured against a baseline to mean anything, and even then, results can flip based on preprocessing choices that have nothing to do with model "intelligence." This project was built for learning purposes (time series preprocessing, RNNs, and PyTorch training loops), not as a trading tool, and this result is a good reminder to stay skeptical of headline accuracy numbers in general — see Narayanan & Kapoor's [AI Snake Oil](https://www.aisnakeoil.com/) for more on this.
 
 ## Acknowledgements
 
 - Methodology reference: [Rodolfo Saldanha — "Stock price prediction with PyTorch"](https://medium.com/swlh/stock-price-prediction-with-pytorch-37f52ae84632)
 - Data: [Yahoo Finance](https://finance.yahoo.com/) via the `yfinance` Python package
+- Critical perspective on AI predictive claims: Narayanan & Kapoor, [AI Snake Oil](https://www.aisnakeoil.com/)
